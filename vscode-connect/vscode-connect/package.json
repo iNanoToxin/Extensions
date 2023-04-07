@@ -12,12 +12,7 @@
   "activationEvents": ["onStartupFinished", "onLanguage:lua"],
   "main": "./extension.js",
   "contributes": {
-    "commands": [
-      {
-        "command": "vscode-connect.getAllFilesAndFolders",
-        "title": "getAllFilesAndFolders"
-      }
-    ]
+    "commands": []
   },
   "scripts": {
     "lint": "eslint .",
