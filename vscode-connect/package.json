@@ -10,7 +10,10 @@
   "categories": [
     "Other"
   ],
-  "activationEvents": ["onStartupFinished", "onLanguage:lua"],
+  "activationEvents": [
+    "onStartupFinished",
+    "onLanguage:lua"
+  ],
   "main": "./extension.js",
   "contributes": {
     "commands": []
@@ -32,6 +35,7 @@
     "typescript": "^4.9.5"
   },
   "dependencies": {
+    "is-hidden": "^2.0.1",
     "ws": "^8.13.0"
   }
 }

@@ -1,58 +1,44 @@
-const vscode = require('vscode');
-const path = require('path');
-const WebSocket = require('ws');
+const vscode = require("vscode")
+const path = require("path")
+const WebSocket = require("ws")
 
-const webSocketServer = new WebSocket.Server({port: 8080});
+const webSocketServer = new WebSocket.Server({
+    port: 8080
+})
+
+const workspace         = vscode.workspace
+const workspace_folders = workspace.workspaceFolders
+const Uri               = vscode.Uri
+
+const hash_map_data = new Map()
+const hash_map_uris = new Map()
+const blacklisted = {}
+
 
 function activate() {
-    console.log("vscode-connect activated");
+    console.log("vscode-connect activated")
 
-    webSocketServer.on('connection', async (websocket) => {
-        console.log("vscode-connect connection established");
+    webSocketServer.on("connection", (websocket) => {
+        console.log("vscode-connect connection established")
 
-        websocket.on('message', async (jsonString) => {
-            const jsonData = JSON.parse(jsonString);
-            const workspaceFolders = vscode.workspace.workspaceFolders;
+        websocket.on("message", (jsonString) => {
+            const jsonData = JSON.parse(jsonString)
 
-            console.log("vscode-connect message received");
-            console.log(jsonData);
+            console.log("vscode-connect message received")
+            console.log(jsonData)
 
-            if (!workspaceFolders) {
-                return websocket.send(JSON.stringify({
-                    Body: "Workspace folder not found.",
-                    StatusCode: 404
-                }))
-            } else if (jsonData.Receive) {
-                const directories = await getDirectories(workspaceFolders);
-
-                return websocket.send(JSON.stringify({
-                    Body: directories,
-                    StatusCode: 200
-                }))
-            } else if (jsonData.Directory) {
-                const directories = await getDirectories(workspaceFolders);
-                const fileData = directories[jsonData.Directory];
-    
-                if (!fileData) {
+            if (jsonData.Directory) {
+                if (!hash_map_uris.has(jsonData.Directory)) {
                     return websocket.send(JSON.stringify({
                         Body: "Invalid directory.",
                         StatusCode: 404
                     }))
                 }
-    
-                try {
-                    const content = await getFileContent(fileData.file_path);
-                    websocket.send(JSON.stringify({
-                        Body: content,
-                        StatusCode: 200
-                    }))
-                } catch (error) {
-                    console.error(error);
-                    websocket.send(JSON.stringify({
-                        Body: "Error reading file content.",
-                        StatusCode: 500
-                    }))
-                }
+
+                return websocket.send(JSON.stringify({
+                    Body: hash_map_data.get(hash_map_uris.get(jsonData.Directory)).source,
+                    StatusCode: 200
+                }))
             } else {
                 return websocket.send(JSON.stringify({
                     Body: "Invalid arguments.",
@@ -61,77 +47,141 @@ function activate() {
             }
         })
     })
-
-    console.log(getEditorDirectories());
 }
 
 function deactivate() {
-    return webSocketServer.close();
+    return webSocketServer.close()
 }
 
-async function getDirectories(folders) {
-    const existing_directories = {};
-    const directories = {};
 
-    async function traverseFolder(uri, rootFolderName) {
-        try {
-            const files = await vscode.workspace.fs.readDirectory(uri);
-    
-            for (const file of files) {
-                const [name, fileType] = file;
-                const fileUri = vscode.Uri.joinPath(uri, name);
 
-                if (fileType === vscode.FileType.Directory) {
-                    await traverseFolder(fileUri, rootFolderName);
-                } else {
-                    const filePath = fileUri.path.replace(/\\/g, '/');
-                    const relativePath = filePath.slice(filePath.indexOf(rootFolderName));
-                    const fileName = path.basename(filePath, path.extname(filePath));
-    
-                    const fileData = {
-                        path: relativePath,
-                        name: name,
-                        file_path: filePath,
-                        short_name: fileName,
-                        from_vscode: true
-                    }
-    
-                    directories[fileData.path] = fileData;
-    
-                    if (directories[fileData.name]) {
-                        existing_directories[fileData.name] = true;
-                        delete directories[fileData.name];
-                    }
-    
-                    if (directories[fileData.short_name]) {
-                        existing_directories[fileData.short_name] = true;
-                        delete directories[fileData.short_name];
-                    }
-    
-                    if (!existing_directories[fileData.name]) {
-                        directories[fileData.name] = fileData;
-                    }
-    
-                    if (!existing_directories[fileData.short_name]) {
-                        directories[fileData.short_name] = fileData;
-                    }
-                }
+
+function get_workspace_folder(uri) {
+    return workspace.getWorkspaceFolder(uri).name
+}
+
+function assign_data_to_map(path, file_data) {
+    if (hash_map_uris.has(file_data.name)) {
+        blacklisted[file_data.name] = true
+        hash_map_uris.delete(file_data.name)
+    }
+
+    if (hash_map_uris.has(file_data.short_name)) {
+        blacklisted[file_data.short_name] = true
+        hash_map_uris.delete(file_data.short_name)
+    }
+
+    if (!blacklisted[file_data.name]) {
+        hash_map_uris.set(file_data.name, path)
+    }
+
+    if (!blacklisted[file_data.short_name]) {
+        hash_map_uris.set(file_data.short_name, path)
+    }
+
+    hash_map_uris.set(file_data.path, path)
+}
+
+function on_create(uri, root_name) {
+    const file_name = path.basename(uri.path)
+
+    if (!root_name) {
+        root_name = get_workspace_folder(uri)
+    }
+
+    workspace.fs.stat(uri).then((result) => {
+        if (result.type === 1) {
+            const file_data = {
+                path: uri.path.slice(uri.path.indexOf(root_name)),
+                name: file_name,
+                file_path: uri.path,
+                short_name: path.basename(uri.path, path.extname(uri.path)),
+                from_vscode: true
             }
-        } catch (error) {
-            console.error(error);
+
+            workspace.fs.readFile(uri).then((results) => {
+                file_data.source = results.toString()
+            })
+
+            hash_map_data.set(uri.fsPath, file_data)
+
+            assign_data_to_map(uri.fsPath, file_data)
+
+            console.log(`created file {${file_name}}.`)
+        } else if (result.type === 2 & !(/^\./).test(file_name)) {
+            workspace.fs.readDirectory(uri).then((results) => {
+                results.forEach((result) => {
+                    on_create(Uri.joinPath(uri, result[0]), root_name)
+                })
+            })
+        }
+    })
+}
+
+function on_delete(uri) {
+    for (let [index, value] of hash_map_data) {
+        if (index.slice(0, uri.fsPath.length) === uri.fsPath) {
+            console.log(`deleted file {${path.basename(index)}}.`)
+            hash_map_data.delete(index)
         }
     }
 
-    const promises = folders.map(folder => traverseFolder(folder.uri, folder.name));
-    await Promise.all(promises);
-
-    return directories;
+    for (let [index, value] of hash_map_uris) {
+        if (value.slice(0, uri.fsPath.length) === uri.fsPath) {
+            hash_map_uris.delete(index)
+        }
+    }
 }
 
-async function getFileContent(filePath) {
-    const uri = vscode.Uri.file(filePath);
-    const content = await vscode.workspace.fs.readFile(uri);
-    return content.toString();
+function on_rename(old_uri, new_uri) {
+    if (!hash_map_data.has(old_uri.fsPath)) {
+        return
+    }
+
+    const old_file_name = path.basename(old_uri.path)
+    const new_file_name = path.basename(new_uri.path)
+
+    const file_data = hash_map_data.get(old_uri.fsPath)
+    file_data.path = new_uri.path.slice(new_uri.path.indexOf(get_workspace_folder(old_uri)))
+    file_data.name = new_file_name
+    file_data.file_path = new_uri.path
+    file_data.short_name = path.basename(new_uri.path, path.extname(new_uri.path))
+
+    hash_map_data.set(new_uri.fsPath, file_data)
+    hash_map_data.delete(old_uri.fsPath)
+
+    for (let [index, value] of hash_map_uris) {
+        if (value === old_uri.fsPath) {
+            hash_map_uris.delete(index)
+        }
+    }
+
+    assign_data_to_map(new_uri.fsPath, file_data)
+
+    console.log(`renamed file from {${old_file_name}} to {${new_file_name}}.`)
+}
+
+function on_update(document) {
+    if (!hash_map_data.has(document.uri.fsPath)) {
+        return
+    }
+
+    hash_map_data.get(document.uri.fsPath).source = document.getText()
+    console.log(`updated document source {${path.basename(document.fileName)}}.`)
+}
+
+workspace.onDidChangeWorkspaceFolders((result) => {
+    result.added.forEach((folder) => on_create(folder.uri, folder.name))
+    result.removed.forEach((folder) => on_delete(folder.uri))
+})
+
+workspace.onDidCreateFiles((result) => result.files.forEach((uri) => on_create(uri)))
+workspace.onDidDeleteFiles((result) => result.files.forEach((uri) => on_delete(uri)))
+workspace.onDidRenameFiles((result) => result.files.forEach((result) => on_rename(result.oldUri, result.newUri)))
+workspace.onDidChangeTextDocument((result) => on_update(result.document))
+
+if (workspace_folders) {
+    workspace_folders.forEach((folder) => on_create(folder.uri, folder.name))
 }
 
 module.exports = {
