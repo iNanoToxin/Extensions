@@ -36,7 +36,7 @@ function activate() {
                 }
 
                 return websocket.send(JSON.stringify({
-                    Body: hash_map_data.get(hash_map_uris.get(jsonData.Directory)).source,
+                    Body: hash_map_data.get(hash_map_uris.get(jsonData.Directory)),
                     StatusCode: 200
                 }))
             } else {
