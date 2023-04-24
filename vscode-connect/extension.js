@@ -105,7 +105,6 @@ function on_create(uri, root_name) {
             const file_data = {
                 path: uri.path.slice(uri.path.indexOf(root_name)),
                 name: file_name,
-                file_path: uri.path,
                 short_name: path.basename(uri.path, path.extname(uri.path)),
                 from_vscode: true
             }
@@ -155,7 +154,6 @@ function on_rename(old_uri, new_uri) {
     const file_data = hash_map_data.get(old_uri.fsPath)
     file_data.path = new_uri.path.slice(new_uri.path.indexOf(get_workspace_folder(old_uri)))
     file_data.name = new_file_name
-    file_data.file_path = new_uri.path
     file_data.short_name = path.basename(new_uri.path, path.extname(new_uri.path))
 
     hash_map_data.set(new_uri.fsPath, file_data)
