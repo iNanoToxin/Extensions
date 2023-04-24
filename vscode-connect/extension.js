@@ -2,7 +2,7 @@ const vscode = require("vscode")
 const path = require("path")
 const WebSocket = require("ws")
 
-const webSocketServer = new WebSocket.Server({
+const websocket_server = new WebSocket.Server({
     port: 8080
 })
 
@@ -18,17 +18,28 @@ const blacklisted = {}
 function activate() {
     console.log("vscode-connect activated")
 
-    webSocketServer.on("connection", (websocket) => {
+    websocket_server.on("connection", (websocket) => {
         console.log("vscode-connect connection established")
 
         websocket.on("message", (jsonString) => {
-            const jsonData = JSON.parse(jsonString)
+            const json = JSON.parse(jsonString)
 
             console.log("vscode-connect message received")
-            console.log(jsonData)
+            console.log(json)
 
-            if (jsonData.Directory) {
-                if (!hash_map_uris.has(jsonData.Directory)) {
+            if (json.Get) {
+                const dict = {}
+
+                for (let [index, value] of hash_map_uris) {
+                    dict[index] = hash_map_data.get(value)
+                }
+
+                return websocket.send(JSON.stringify({
+                    Body: dict,
+                    StatusCode: 200
+                }))
+            } else if (json.Directory) {
+                if (!hash_map_uris.has(json.Directory)) {
                     return websocket.send(JSON.stringify({
                         Body: "Invalid directory.",
                         StatusCode: 404
@@ -36,7 +47,7 @@ function activate() {
                 }
 
                 return websocket.send(JSON.stringify({
-                    Body: hash_map_data.get(hash_map_uris.get(jsonData.Directory)),
+                    Body: hash_map_data.get(hash_map_uris.get(json.Directory)),
                     StatusCode: 200
                 }))
             } else {
@@ -50,7 +61,7 @@ function activate() {
 }
 
 function deactivate() {
-    return webSocketServer.close()
+    return websocket_server.close()
 }
 
 
